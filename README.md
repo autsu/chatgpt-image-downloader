@@ -1,0 +1,48 @@
+# ChatGPT Image Downloader
+
+中英文双语的 Manifest V3 Chrome 扩展，用于下载 ChatGPT Images 页面中的个人图片。
+
+## 功能 · Features
+
+- 只扫描「我的图片 / My images」区域。
+- 排除 WebP 缩略图、封面图和页面公共资源。
+- 滚动页面即可继续扫描新图片。
+- 支持下载全部图片或下载选中图片。
+- 稳定生成文件名，重复下载时跳过已有文件。
+- 支持暂停、恢复和切换下载目录。
+- 目录由设置页通过系统文件夹选择器授权。
+
+Scans only the **My images** section on `chatgpt.com/images`, filters thumbnails and unrelated assets, and downloads selected images with stable filenames. It also supports pause/resume and folder selection.
+
+## 安装 · Install
+
+1. 打开 `chrome://extensions/`。
+2. 开启「开发者模式」。
+3. 点击「加载已解压的扩展程序」。
+4. 选择本项目目录。
+5. 打开 `https://chatgpt.com/images/` 并刷新页面。
+
+Open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked**, select this directory, then refresh the ChatGPT Images page.
+
+## 使用 · Usage
+
+1. 点击页面右下角的悬浮按钮。
+2. 在面板中查看扫描数量和图片列表。
+3. 点击齿轮，在设置页选择下载目录。
+4. 选择「下载全部图片」或「下载选中的图片」。
+
+Click the floating button, choose a folder from the settings page, then download all images or only the checked images.
+
+> Chrome 不会向扩展暴露 macOS 的完整绝对路径。扩展保存目录句柄并直接写入已授权目录，界面显示目录名称。
+>
+> Chrome does not expose the full macOS absolute path to extensions. The extension stores the directory handle and writes directly to the authorized folder.
+
+## 隐私 · Privacy
+
+扩展只在 `chatgpt.com/images` 页面运行，不上传图片或账号数据。下载请求直接发送到图片原始地址。
+
+Runs only on `chatgpt.com/images`. It does not upload images or account data.
+
+## License
+
+[MIT](LICENSE)

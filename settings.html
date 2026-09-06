@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ChatGPT 图片下载设置</title>
+    <link rel="stylesheet" href="settings.css">
+  </head>
+  <body>
+    <main class="settings-card">
+      <header class="header">
+        <div class="brand-mark">↓</div>
+        <div>
+          <h1>下载目录设置</h1>
+          <p>ChatGPT 图片批量下载</p>
+        </div>
+      </header>
+
+      <section class="section">
+        <label>当前下载目录</label>
+        <div id="current-folder" class="current-folder">正在读取…</div>
+        <p class="hint">Chrome 的安全机制不会把 macOS 的完整绝对路径提供给扩展；这里显示已授权目录的名称，下载会直接写入该目录。</p>
+      </section>
+
+      <section class="section">
+        <button id="choose-folder" class="primary-button" type="button">打开系统文件夹选择器</button>
+        <div id="status" class="status" role="status"></div>
+      </section>
+    </main>
+    <script src="settings.js"></script>
+  </body>
+</html>

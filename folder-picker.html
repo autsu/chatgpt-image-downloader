@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>选择保存文件夹</title>
+    <style>
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { display: grid; place-items: center; min-width: 360px; min-height: 220px; margin: 0; color: #272531; background: #faf9fc; }
+      main { width: 300px; padding: 28px; border: 1px solid #e6e2ef; border-radius: 18px; background: #fff; box-shadow: 0 12px 36px #33265c18; text-align: center; }
+      .icon { display: grid; place-items: center; width: 44px; height: 44px; margin: 0 auto 14px; border-radius: 14px; color: #fff; background: #7058d8; font-size: 22px; }
+      h1 { margin: 0; font-size: 17px; }
+      p { margin: 9px 0 18px; color: #817e8d; font-size: 12px; line-height: 1.5; }
+      button { height: 38px; padding: 0 18px; border: 0; border-radius: 9px; color: #fff; background: #7058d8; cursor: pointer; font: 650 13px -apple-system, BlinkMacSystemFont, sans-serif; }
+      button:hover { background: #5b44c7; }
+      #status { min-height: 17px; margin-top: 12px; color: #817e8d; font-size: 11px; }
+      #status.error { color: #c54c4c; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="icon">↓</div>
+      <h1>选择保存文件夹</h1>
+      <p>图片将直接保存到你选择的文件夹。首次使用需要授予写入权限。</p>
+      <button id="pick" type="button">打开文件管理器</button>
+      <div id="status" role="status"></div>
+    </main>
+    <script src="folder-picker.js"></script>
+  </body>
+</html>
