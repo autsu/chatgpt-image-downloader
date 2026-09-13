@@ -540,14 +540,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return { ok: tabId != null, tabId };
     }
     if (message.type === "OPEN_SETTINGS_PAGE") {
-      const url = chrome.runtime.getURL("settings.html");
-      const tabs = await chrome.tabs.query({ url });
-      const existing = tabs.find((tab) => tab.id != null);
+      const baseUrl = chrome.runtime.getURL("settings.html");
+      const url = new URL(baseUrl);
+      const sourceTabId = Number(message.sourceTabId) || tabId;
+      if (sourceTabId != null) url.searchParams.set("returnTabId", String(sourceTabId));
+      if (message.mode) url.searchParams.set("mode", String(message.mode));
+      const tabs = await chrome.tabs.query({});
+      const existing = tabs.find((tab) => tab.id != null && tab.url?.startsWith(baseUrl));
       if (existing?.id != null) {
-        await chrome.tabs.update(existing.id, { active: true });
+        await chrome.tabs.update(existing.id, { active: true, url: url.href });
         return { ok: true, tabId: existing.id };
       }
-      const created = await chrome.tabs.create({ url, active: true });
+      const created = await chrome.tabs.create({ url: url.href, active: true });
       return { ok: true, tabId: created.id };
     }
     if (message.type === "DIRECTORY_SELECTED") {

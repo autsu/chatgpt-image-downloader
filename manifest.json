@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT 图片批量下载",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "扫描 chatgpt.com/images 页面中的图片，并稳定地批量下载。",
   "permissions": [
     "downloads",

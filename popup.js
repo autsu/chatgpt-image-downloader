@@ -2,6 +2,7 @@ let currentTabId = null;
 let currentState = { images: [] };
 let currentSettings = { folder: "ChatGPT Images", directoryMode: false };
 let directoryHandle = null;
+let directoryPermissionGranted = false;
 let downloadPaused = false;
 const activeDirectKeys = new Set();
 const resumeWaiters = [];
@@ -63,9 +64,7 @@ const loadDirectoryHandle = async () => {
 const hasDirectoryPermission = async (handle) => {
   if (!handle) return false;
   try {
-    const current = await handle.queryPermission?.({ mode: "readwrite" });
-    if (current === "granted") return true;
-    return await handle.requestPermission({ mode: "readwrite" }) === "granted";
+    return await handle.queryPermission?.({ mode: "readwrite" }) === "granted";
   } catch {
     return false;
   }
@@ -204,8 +203,10 @@ const render = () => {
     ? currentSettings.folder || directoryHandle.name
     : "未选择文件夹（Chrome 默认下载目录）";
   $("#folder-input").readOnly = true;
-  $("#folder-mode-hint").textContent = currentSettings.directoryMode
-    ? `已选择“${currentSettings.folder || "目标文件夹"}”，下载会直接保存到该文件夹。完整绝对路径由 Chrome 隐藏。`
+  $("#folder-mode-hint").textContent = currentSettings.directoryMode && directoryHandle
+    ? directoryPermissionGranted
+      ? `已授权“${currentSettings.folder || "目标文件夹"}”，下载会直接保存到该文件夹。`
+      : `已选择“${currentSettings.folder || "目标文件夹"}”，但 Chrome 需要重新授权。点击齿轮即可完成。`
     : "尚未选择目录，当前会使用 Chrome 默认下载目录。点击齿轮设置保存目录。";
   $("#connection-dot").classList.add("connected");
   updatePauseButton();
@@ -361,7 +362,7 @@ const mapWithConcurrency = async (items, limit, worker) => {
 
 const reconcileDirectoryFilesNow = async (keys) => {
   const handle = directoryHandle;
-  if (!currentSettings.directoryMode || !handle || currentTabId == null) return [];
+  if (!currentSettings.directoryMode || !handle || !directoryPermissionGranted || currentTabId == null) return [];
   const wanted = new Set(keys || []);
   const images = currentState.images.filter((image) =>
     wanted.has(image.key) && !["queued", "downloading"].includes(image.status));
@@ -459,7 +460,7 @@ const refreshExistingStatuses = async () => {
 };
 
 const scheduleDirectoryScan = () => {
-  if (!currentSettings.directoryMode || !directoryHandle) return;
+  if (!currentSettings.directoryMode || !directoryHandle || !directoryPermissionGranted) return;
   window.clearTimeout(directoryScanTimer);
   directoryScanTimer = window.setTimeout(() => {
     const keys = currentState.images
@@ -516,9 +517,13 @@ const downloadToDirectory = async (keys, handle) => {
   const initialHandle = directoryHandle || handle;
   if (!(await hasDirectoryPermission(initialHandle))) {
     uniqueKeys.forEach((key) => activeDirectKeys.delete(key));
-    showToast("文件夹权限已失效，请重新选择文件夹");
+    directoryPermissionGranted = false;
+    render();
+    await openSettingsPage("reauthorize");
+    showToast("目录权限已过期，已打开授权页");
     return;
   }
+  directoryPermissionGranted = true;
   showToast(`正在检查目标文件夹中的 ${uniqueKeys.length} 张图片…`);
   await reconcileDirectoryFiles(uniqueKeys);
   const downloadKeys = uniqueKeys.filter((key) => {
@@ -623,6 +628,12 @@ const download = async (keys, message) => {
   showToast(`已加入 ${keys.length} 张图片的下载队列`);
 };
 
+const openSettingsPage = async (mode = "settings") => {
+  const response = await send({ type: "OPEN_SETTINGS_PAGE", sourceTabId: currentTabId, mode });
+  if (!response.ok) showToast("打开设置页失败");
+  return response;
+};
+
 const pollChromeDownloadProgress = async () => {
   const active = currentState.images.filter((image) => image.status === "downloading" && image.downloadId != null && !activeDirectKeys.has(image.key));
   const now = performance.now();
@@ -670,8 +681,7 @@ document.addEventListener("click", async (event) => {
 });
 
 $("#open-settings").addEventListener("click", async () => {
-  const response = await send({ type: "OPEN_SETTINGS_PAGE" });
-  if (!response.ok) showToast("打开设置页失败");
+  await openSettingsPage();
 });
 $("#download-all").addEventListener("click", async () => {
   const includeSkippedForDirectoryRescan = currentSettings.directoryMode && directoryHandle;
@@ -711,9 +721,14 @@ chrome.runtime.onMessage.addListener((message) => {
     });
     void loadDirectoryHandle().then((handle) => {
       directoryHandle = handle;
-      void refreshExistingStatuses().then(() => {
+      void hasDirectoryPermission(handle).then((granted) => {
+        directoryPermissionGranted = granted;
+        return refreshExistingStatuses();
+      }).then(() => {
         render();
-        showToast(`已选择文件夹：${currentSettings.folder}`);
+        showToast(directoryPermissionGranted
+          ? `目录已授权：${currentSettings.folder}`
+          : "目录已选择，但仍需要授权");
       });
     });
     return;
@@ -741,6 +756,7 @@ window.setInterval(() => void pollChromeDownloadProgress(), 500);
   downloadPaused = Boolean(pauseResponse.paused);
   directoryHandle = await loadDirectoryHandle();
   if (!directoryHandle) currentSettings.directoryMode = false;
+  directoryPermissionGranted = await hasDirectoryPermission(directoryHandle);
   directoryCheckedKeys.clear();
   await refreshExistingStatuses();
   render();

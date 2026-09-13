@@ -70,5 +70,7 @@ h1 { margin: 0; font-size: 21px; }
 }
 .primary-button:hover { background: var(--accent-dark); }
 .primary-button:disabled { cursor: wait; opacity: .6; }
+.primary-button + .primary-button { margin-left: 8px; }
+[hidden] { display: none !important; }
 .status { min-height: 20px; margin-top: 12px; color: var(--green); font-size: 12px; }
 .status.error { color: var(--red); }

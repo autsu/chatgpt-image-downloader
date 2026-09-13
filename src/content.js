@@ -279,27 +279,51 @@
 
     const panel = shadow.querySelector(".panel");
     const launcher = shadow.querySelector(".launcher");
+    let panelLoading = false;
+    let openWhenReady = false;
+
+    const ensurePanel = (openAfterLoad = false) => {
+      openWhenReady ||= openAfterLoad;
+      if (panel.querySelector("iframe")) {
+        if (openWhenReady) {
+          panel.classList.add("open");
+          panel.setAttribute("aria-hidden", "false");
+          openWhenReady = false;
+        }
+        return;
+      }
+      if (panelLoading) return;
+      panelLoading = true;
+      sendRuntimeMessage({ type: "OPEN_IN_PAGE_PANEL" }, (response) => {
+        panelLoading = false;
+        if (!response?.ok) {
+          launcher.title = "请点击 Chrome 工具栏中的扩展图标打开下载器";
+          return;
+        }
+        const iframe = document.createElement("iframe");
+        iframe.title = "ChatGPT 图片下载器";
+        iframe.src = chrome.runtime.getURL(`popup.html?embedded=1&tabId=${response.tabId}`);
+        panel.appendChild(iframe);
+        if (openWhenReady) {
+          panel.classList.add("open");
+          panel.setAttribute("aria-hidden", "false");
+          openWhenReady = false;
+        }
+      });
+    };
+
     launcher.addEventListener("click", () => {
       if (panel.classList.contains("open")) {
         panel.classList.remove("open");
         panel.setAttribute("aria-hidden", "true");
         return;
       }
-      sendRuntimeMessage({ type: "OPEN_IN_PAGE_PANEL" }, (response) => {
-        if (!response?.ok) {
-          launcher.title = "请点击 Chrome 工具栏中的扩展图标打开下载器";
-          return;
-        }
-        if (!panel.querySelector("iframe")) {
-          const iframe = document.createElement("iframe");
-          iframe.title = "ChatGPT 图片下载器";
-          iframe.src = chrome.runtime.getURL(`popup.html?embedded=1&tabId=${response.tabId}`);
-          panel.appendChild(iframe);
-        }
-        panel.classList.add("open");
-        panel.setAttribute("aria-hidden", "false");
-      });
+      ensurePanel(true);
     });
+
+    // Keep the panel hidden, but initialize it immediately so every page refresh
+    // checks the selected directory and newly discovered images without another click.
+    ensurePanel(false);
   };
 
   window.addEventListener("message", (event) => {
