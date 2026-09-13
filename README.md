@@ -5,14 +5,15 @@
 ## 功能 · Features
 
 - 只扫描「我的图片 / My images」区域。
-- 排除 WebP 缩略图、封面图和页面公共资源。
+- 根据真实文件类型、尺寸和体积排除 WebP 缩略图、封面图和页面公共资源。
 - 滚动页面即可继续扫描新图片。
 - 支持下载全部图片或下载选中图片。
-- 稳定生成文件名，重复下载时跳过已有文件。
+- 下载前扫描目标目录，按稳定文件名和文件大小跳过已有文件。
 - 支持暂停、恢复和切换下载目录。
+- 显示单张图片的下载进度、已下载大小和实时速度。
 - 目录由设置页通过系统文件夹选择器授权。
 
-Scans only the **My images** section on `chatgpt.com/images`, filters thumbnails and unrelated assets, and downloads selected images with stable filenames. It also supports pause/resume and folder selection.
+Scans only the **My images** section on `chatgpt.com/images`, filters thumbnails by their real content type, dimensions, and size, and checks the target folder before queueing. Downloads use stable filenames and show per-file progress and speed. Pause/resume and folder switching are supported.
 
 ## 安装 · Install
 

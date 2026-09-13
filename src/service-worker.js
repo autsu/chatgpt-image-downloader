@@ -4,6 +4,7 @@ const SETTINGS_KEY = "settings";
 const DOWNLOADED_KEY = "downloaded-image-keys";
 const QUEUE_KEY = "download-queue";
 const PAUSED_KEY = "download-paused";
+const MIN_IMAGE_BYTES = 64 * 1024;
 const VOLATILE_QUERY_KEYS = new Set([
   "expires", "expiry", "se", "sig", "signature", "sp", "sv", "token", "access_token",
   "cache", "cachebust", "cache_bust", "t", "timestamp", "width", "height", "quality", "format"
@@ -250,12 +251,18 @@ const mergeImages = (state, items) => {
     const preferredUrl = candidateScore(incoming) >= candidateScore(existing) ? incoming.url : existing.url;
     const nextFilename = getFilename(preferredUrl);
     if (existing.url !== preferredUrl || existing.lastSeenAt !== incoming.lastSeenAt || existing.filename !== nextFilename) {
+      const sourceChanged = existing.url !== preferredUrl;
       existing.url = preferredUrl;
       existing.filename = nextFilename;
       existing.lastSeenAt = incoming.lastSeenAt;
       existing.name = incoming.name || existing.name;
       existing.prompt = incoming.prompt || existing.prompt;
       existing.source = incoming.source || existing.source;
+      if (sourceChanged && existing.status === "filtered") {
+        existing.status = "ready";
+        existing.selected = true;
+        existing.error = "";
+      }
       changed = true;
     }
   });
@@ -295,6 +302,35 @@ const setImageStatus = async (tabId, key, patch) => {
   await broadcast(tabId, state);
 };
 
+const getRemoteMetadata = async (url) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) return { size: null, contentType: "" };
+    const contentLength = Number(response.headers.get("content-length"));
+    return {
+      size: Number.isFinite(contentLength) && contentLength >= 0 ? contentLength : null,
+      contentType: (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase()
+    };
+  } catch {
+    return { size: null, contentType: "" };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const thumbnailReason = ({ size, contentType }) => {
+  if (contentType === "image/webp") return "WebP 缩略图";
+  if (size != null && size < MIN_IMAGE_BYTES) return "文件过小";
+  return "";
+};
+
 const pumpQueue = async () => {
   await loadPersistedData();
   if (downloadPaused) return;
@@ -310,6 +346,21 @@ const pumpQueue = async () => {
   const folder = sanitizeFolder(settings.folder);
   const filename = folder ? `${folder}/${image.filename}` : image.filename;
   try {
+    const metadata = await getRemoteMetadata(image.url);
+    const filteredReason = thumbnailReason(metadata);
+    if (filteredReason) {
+      await setImageStatus(next.tabId, next.key, {
+        status: "filtered",
+        selected: false,
+        error: `已过滤：${filteredReason}`,
+        size: metadata.size,
+        contentType: metadata.contentType
+      });
+      runtimeQueue.shift();
+      await persistQueue();
+      await pumpQueue();
+      return;
+    }
     await setImageStatus(next.tabId, next.key, { status: "downloading", error: "" });
     const downloadId = await chrome.downloads.download({
       url: image.url,
@@ -522,14 +573,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const status = message.status || "ready";
       state.images.forEach((image) => {
         if (!keys.has(image.key)) return;
+        const details = message.details?.[image.key] || {};
         image.status = status;
-        image.error = message.error || "";
+        image.error = details.error || message.error || "";
+        for (const property of ["size", "contentType", "width", "height"]) {
+          if (Object.hasOwn(details, property)) image[property] = details[property];
+        }
         if (status === "ready") {
           image.selected = true;
           image.downloadId = null;
+          image.error = "";
+        }
+        if (["skipped", "filtered", "complete"].includes(status)) {
+          image.selected = false;
         }
         if (status === "complete") {
-          image.selected = false;
           downloadedKeys.add(image.key);
         }
       });

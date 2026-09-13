@@ -114,7 +114,16 @@ h1 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
 .image-status { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
 .image-status.complete { color: var(--green); }
 .image-status.downloading, .image-status.queued { color: var(--orange); }
+.image-status.filtered { color: #8b6b42; }
 .image-status.error { color: #c54c4c; }
+.progress-track { position: relative; height: 4px; margin-top: 6px; overflow: hidden; border-radius: 4px; background: #eeeaf5; }
+.progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), #9c88ef); transition: width .18s ease; }
+.progress-track.indeterminate .progress-fill { animation: progress-slide 1.15s ease-in-out infinite; }
+.progress-meta { margin-top: 3px; color: var(--muted); font-size: 9px; line-height: 1.25; }
+@keyframes progress-slide {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(320%); }
+}
 .retry-button { border: 0; color: var(--accent); background: transparent; font-size: 10px; }
 .empty-state { padding: 35px 18px 45px; color: var(--muted); text-align: center; }
 .empty-icon { display: grid; place-items: center; width: 38px; height: 38px; margin: 0 auto 10px; border-radius: 12px; color: var(--accent); background: #f0edff; font-size: 20px; }
