@@ -59,6 +59,20 @@ chmod 600 /path/to/request.txt
 
 The CLI reads only original URLs returned by `recent/image_gen`. Save that request with **Copy as cURL**, pass the local file with `-curl-file`, and delete it after use because it contains session credentials.
 
+普通 CLI 会逐文件输出开始、进度、实时速度、已存在跳过、完成和失败日志。
+
+### Bubble Tea TUI
+
+```bash
+go build -o chatgpt-image-downloader-tui ./cmd/chatgpt-image-downloader-tui
+./chatgpt-image-downloader-tui \
+  -curl-file /path/to/request.txt \
+  -output /Users/you/Downloads/chatgptimg \
+  -workers 3
+```
+
+快捷键：`↑/↓` 或 `j/k` 移动，`space` 选择，`a` 全选，`n` 全不选，`d` 下载，`p` 暂停/恢复，`q` 退出。界面显示扫描数、选择数、成功/跳过/失败数、总速度，以及每张图片的状态和进度条。
+
 ## 隐私 · Privacy
 
 扩展只在 `chatgpt.com/images` 页面运行，不上传图片或账号数据。下载请求直接发送到图片原始地址。

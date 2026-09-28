@@ -1,4 +1,4 @@
-package main
+package downloader
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestParseCurlAndRemoveCursor(t *testing.T) {
+func TestConfigAndOriginalFiltering(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "request.txt")
 	data := `curl --url 'https://chatgpt.com/backend-api/my/recent/image_gen?limit=20&after=old' \
   -H 'authorization: Bearer test-token' \
@@ -15,7 +15,7 @@ func TestParseCurlAndRemoveCursor(t *testing.T) {
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := parseCurlFile(path)
+	cfg, err := ConfigFromCurlFile(path, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,19 +25,17 @@ func TestParseCurlAndRemoveCursor(t *testing.T) {
 	if cfg.Headers.Get("Authorization") != "Bearer test-token" || cfg.Headers.Get("Cookie") != "session=test-cookie" {
 		t.Fatal("headers were not parsed")
 	}
-}
 
-func TestOnlyAcceptOriginalEstuaryURL(t *testing.T) {
 	original := "https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=x"
 	thumbnail := "https://chatgpt.com/backend-api/estuary/content?id=prefix%23file_abc123%23thumbnail&sig=x"
 	asset := "https://chatgpt.com/cdn/assets/education-poster.png"
-	if !isOriginalURL(original) {
+	if !IsOriginalURL(original) {
 		t.Fatal("original URL rejected")
 	}
-	if isOriginalURL(thumbnail) || isOriginalURL(asset) {
+	if IsOriginalURL(thumbnail) || IsOriginalURL(asset) {
 		t.Fatal("thumbnail or page asset accepted")
 	}
-	if got := stableBase(imageItem{URL: original}); got != "ChatGPT-file_abc123" {
+	if got := StableBase("", original); got != "ChatGPT-file_abc123" {
 		t.Fatalf("unexpected stable name: %s", got)
 	}
 }
