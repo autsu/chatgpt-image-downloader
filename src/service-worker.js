@@ -4,6 +4,7 @@ const SETTINGS_KEY = "settings";
 const DOWNLOADED_KEY = "downloaded-image-keys";
 const QUEUE_KEY = "download-queue";
 const PAUSED_KEY = "download-paused";
+const STATE_SCHEMA = 2;
 const MIN_IMAGE_BYTES = 64 * 1024;
 const VOLATILE_QUERY_KEYS = new Set([
   "expires", "expiry", "se", "sig", "signature", "sp", "sv", "token", "access_token",
@@ -20,6 +21,7 @@ let initialized = false;
 const stateStorageKey = (tabId) => `${TAB_PREFIX}${tabId}`;
 
 const defaultState = () => ({
+  schema: STATE_SCHEMA,
   images: [],
   updatedAt: Date.now(),
   downloading: 0,
@@ -29,7 +31,8 @@ const defaultState = () => ({
 const getStoredState = async (tabId) => {
   if (runtimeState.has(tabId)) return runtimeState.get(tabId);
   const result = await chrome.storage.session.get(stateStorageKey(tabId));
-  const state = result[stateStorageKey(tabId)] || defaultState();
+  const stored = result[stateStorageKey(tabId)];
+  const state = stored?.schema === STATE_SCHEMA ? stored : defaultState();
   runtimeState.set(tabId, state);
   return state;
 };
@@ -251,6 +254,7 @@ const mergeImages = (state, items) => {
       name: sanitizeSegment(candidate.name),
       prompt: String(candidate.prompt || "").slice(0, 300),
       source: candidate.source || "page",
+      blobUrl: typeof candidate.blobUrl === "string" ? candidate.blobUrl : "",
       needsResolution: Boolean(candidate.needsResolution),
       firstSeenAt: existing?.firstSeenAt || Date.now(),
       lastSeenAt: Date.now(),
@@ -276,6 +280,7 @@ const mergeImages = (state, items) => {
       existing.name = incoming.name || existing.name;
       existing.prompt = incoming.prompt || existing.prompt;
       existing.source = incoming.source || existing.source;
+      existing.blobUrl = incoming.blobUrl || existing.blobUrl || "";
       existing.needsResolution = Boolean(preferred.needsResolution);
       if (sourceChanged && existing.status === "filtered") {
         existing.status = "ready";

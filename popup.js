@@ -224,7 +224,7 @@ const render = () => {
     ? `检查目录 ${directoryScanState.done}/${directoryScanState.total}`
     : downloadPaused
       ? "下载已暂停"
-      : active ? `${active} 张正在下载` : "仅扫描“我的图片”区域，向下滚动继续";
+      : active ? `${active} 张正在下载` : "正在自动扫描“我的图片”全部分页";
   $("#list-subtitle").textContent = selected.length === images.filter((image) => !terminalStatuses.has(image.status)).length ? "全部选中" : `${selected.length} 张已选中`;
   $("#download-all").disabled = Boolean(directoryScanState);
   $("#download-selected").disabled = Boolean(directoryScanState);
@@ -625,34 +625,18 @@ const download = async (keys, message) => {
     showToast(message);
     return;
   }
-  const resolvedKeys = [];
-  for (const key of keys) {
-    let image = currentState.images.find((item) => item.key === key);
-    if (!image) continue;
-    if (image.needsResolution) {
-      resolvingKeys.add(key);
-      render();
-      const resolved = await sendToTab({ type: "RESOLVE_ORIGINAL_IMAGE", url: image.url });
-      resolvingKeys.delete(key);
-      if (!resolved.ok || !resolved.url) {
-        await markDirectStatus([key], "error", resolved.error || "无法解析原图，请滚动到该图片后重试");
-        continue;
-      }
-      const updated = await send({
-        type: "UPDATE_IMAGE_SOURCE",
-        tabId: currentTabId,
-        key,
-        url: resolved.url
-      });
-      if (updated.state) currentState = updated.state;
-      image = currentState.images.find((item) => item.key === key);
-    }
-    if (image && !image.needsResolution) resolvedKeys.push(key);
+  if (currentSettings.directoryMode && (!directoryHandle || !(await hasDirectoryPermission(directoryHandle)))) {
+    directoryPermissionGranted = false;
+    render();
+    showToast("保存目录尚未授权，授权后才能开始下载");
+    await openSettingsPage("reauthorize");
+    return;
   }
-  render();
-  keys = resolvedKeys;
+  const legacyKeys = keys.filter((key) => currentState.images.find((item) => item.key === key)?.needsResolution);
+  if (legacyKeys.length) await markDirectStatus(legacyKeys, "filtered", "旧版缩略图记录已清除，请刷新 Images 页面重新扫描");
+  keys = keys.filter((key) => !legacyKeys.includes(key));
   if (!keys.length) {
-    showToast("没有成功解析出可下载的原图");
+    showToast("没有可下载的原图，请刷新 Images 页面重新扫描");
     return;
   }
   if (currentSettings.directoryMode && directoryHandle) {

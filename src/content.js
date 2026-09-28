@@ -1,10 +1,12 @@
 (() => {
   const PAGE_MESSAGE = "__CHATGPT_IMAGE_DOWNLOADER_CANDIDATE__";
+  const SNAPSHOT_MESSAGE = "__CHATGPT_IMAGE_DOWNLOADER_SNAPSHOT__";
   const pending = new Map();
   const deferredCandidates = new Map();
   const scopedUrls = new Set();
   const scopedPaths = new Set();
   const scopedAssetIds = new Set();
+  const blobSourceUrls = new Map();
   let myImagesScope = null;
   let flushTimer = null;
 
@@ -31,8 +33,9 @@
 
   const isMyImagesHeading = (element) => {
     const text = compactText(element.textContent);
-    return text === "我的图片" || text === "my images" || text === "my pictures" ||
-      text.startsWith("我的图片 ") || text.startsWith("my images ") || text.startsWith("my pictures ");
+    return text === "我的图片" || text === "我的图像" || text === "my images" || text === "my pictures" ||
+      text.startsWith("我的图片 ") || text.startsWith("我的图像 ") ||
+      text.startsWith("my images ") || text.startsWith("my pictures ");
   };
 
   const findMyImagesScope = () => {
@@ -142,7 +145,9 @@
       name: candidate.name || existing?.name || "",
       prompt: candidate.prompt || existing?.prompt || "",
       createdAt: candidate.createdAt || existing?.createdAt || "",
+      blobUrl: candidate.blobUrl || existing?.blobUrl || "",
       needsResolution: Boolean(candidate.needsResolution ?? existing?.needsResolution),
+      fromMyImagesApi: Boolean(candidate.fromMyImagesApi ?? existing?.fromMyImagesApi),
       source: source || existing?.source || "page"
     });
     if (flushTimer === null) flushTimer = window.setTimeout(flush, 120);
@@ -162,7 +167,7 @@
       addPending({ ...candidate, url }, url, source);
       return;
     }
-    if (!["dom", "restore"].includes(source) && !isInMyImagesScope(url)) {
+    if (!candidate.fromMyImagesApi && !["dom", "restore"].includes(source) && !isInMyImagesScope(url)) {
       deferredCandidates.set(url, { ...candidate, url });
       return;
     }
@@ -181,7 +186,7 @@
 
   const findOpenButtonForImage = (image) => {
     const directButton = image?.closest("button");
-    if (directButton && /open image|打开图片/i.test(directButton.getAttribute("aria-label") || "")) return directButton;
+    if (directButton) return directButton;
     let node = image?.parentElement;
     for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
       const button = node.querySelector('button[aria-label^="Open image:"], button[aria-label*="打开图片"]');
@@ -206,6 +211,18 @@
 
     refreshScope();
     if (!myImagesScope) return;
+
+    myImagesScope.querySelectorAll("img").forEach((image) => {
+      const blobUrl = image.currentSrc || image.src;
+      const sourceUrl = blobSourceUrls.get(blobUrl);
+      if (!sourceUrl) return;
+      enqueue({
+        url: sourceUrl,
+        blobUrl,
+        name: image.alt || image.getAttribute("aria-label") || "",
+        needsResolution: isThumbnailUrl(sourceUrl)
+      }, "dom");
+    });
 
     myImagesScope.querySelectorAll("img").forEach((image) => {
       const candidates = [
@@ -254,7 +271,12 @@
       style.visibility !== "hidden" && Number(style.opacity) !== 0;
   };
 
-  const findCardOpenButton = (fileId) => {
+  const findCardOpenButton = (fileId, blobUrl = "") => {
+    if (blobUrl) {
+      const blobImage = [...document.querySelectorAll("img")]
+        .find((item) => (item.currentSrc || item.src) === blobUrl);
+      if (blobImage) return findOpenButtonForImage(blobImage);
+    }
     const image = [...document.querySelectorAll('img[src*="/backend-api/estuary/content"]')]
       .find((item) => isThumbnailUrl(item.currentSrc || item.src) && estuaryFileId(item.currentSrc || item.src) === fileId);
     if (!image) return null;
@@ -264,13 +286,17 @@
   const waitForOriginalImage = (fileId, timeoutMs = 7000) => new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
-      const image = [...document.querySelectorAll('img[src*="/backend-api/estuary/content"]')].find((item) => {
+      let originalUrl = "";
+      const image = [...document.querySelectorAll("img")].find((item) => {
         const src = item.currentSrc || item.src;
-        return src && !isThumbnailUrl(src) && estuaryFileId(src) === fileId && isVisible(item);
+        const sourceUrl = src.startsWith("blob:") ? blobSourceUrls.get(src) || "" : src;
+        const matches = sourceUrl && !isThumbnailUrl(sourceUrl) && estuaryFileId(sourceUrl) === fileId && isVisible(item);
+        if (matches) originalUrl = sourceUrl;
+        return matches;
       });
       if (image) {
         window.clearInterval(timer);
-        resolve(image.currentSrc || image.src);
+        resolve(originalUrl);
         return;
       }
       if (Date.now() - startedAt >= timeoutMs) {
@@ -291,10 +317,10 @@
     await new Promise((resolve) => window.setTimeout(resolve, 180));
   };
 
-  const resolveOriginalImage = async (thumbnailUrl) => {
+  const resolveOriginalImage = async (thumbnailUrl, blobUrl = "") => {
     const fileId = estuaryFileId(thumbnailUrl);
     if (!fileId) throw new Error("无法识别图片文件 ID");
-    const openButton = findCardOpenButton(fileId);
+    const openButton = findCardOpenButton(fileId, blobUrl);
     if (!openButton) throw new Error("找不到对应的图片卡片，请滚动到该图片后重试");
     openButton.click();
     try {
@@ -309,6 +335,10 @@
     try {
       const observer = new PerformanceObserver((list) => {
         list.getEntries().forEach((entry) => {
+          if (/\/backend-api\/estuary\/content/i.test(entry.name)) {
+            enqueue({ url: entry.name, needsResolution: isThumbnailUrl(entry.name) }, "network");
+            return;
+          }
           if (entry.initiatorType === "img" && isInMyImagesScope(entry.name)) {
             enqueue({ url: entry.name }, "network");
           }
@@ -428,12 +458,16 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.origin !== window.location.origin) return;
     if (event.data?.type !== PAGE_MESSAGE) return;
+    if (event.data.candidate?.blobUrl) {
+      blobSourceUrls.set(event.data.candidate.blobUrl, event.data.candidate.url);
+    }
     enqueue(event.data.candidate, "request");
+    if (event.data.candidate?.blobUrl) scanDom();
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type !== "RESOLVE_ORIGINAL_IMAGE") return false;
-    resolveOriginalImage(message.url)
+    resolveOriginalImage(message.url, message.blobUrl)
       .then((url) => sendResponse({ ok: true, url }))
       .catch((error) => sendResponse({ ok: false, error: error?.message || "解析原图失败" }));
     return true;
@@ -442,6 +476,7 @@
   const mutationObserver = new MutationObserver(() => scanDom());
   mutationObserver.observe(document.documentElement, { childList: true, subtree: true });
   observeResources();
+  window.postMessage({ type: SNAPSHOT_MESSAGE }, window.location.origin);
   scanDom();
   injectDownloadPanel();
 
