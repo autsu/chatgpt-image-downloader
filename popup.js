@@ -9,6 +9,7 @@ const resumeWaiters = [];
 const liveProgress = new Map();
 const chromeProgressSamples = new Map();
 const directoryCheckingKeys = new Set();
+const directoryQueuedKeys = new Set();
 const resolvingKeys = new Set();
 const directoryCheckedKeys = new Set();
 const MIN_IMAGE_BYTES = 64 * 1024;
@@ -18,6 +19,8 @@ let toastTimer = null;
 let directoryScanState = null;
 let directoryScanChain = Promise.resolve();
 let directoryScanTimer = null;
+let directoryIndexHandle = null;
+let directoryIndexPromise = null;
 const embeddedTabId = Number(new URLSearchParams(location.search).get("tabId")) || null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -77,6 +80,27 @@ const hasDirectoryPermission = async (handle) => {
   } catch {
     return false;
   }
+};
+
+const resetDirectoryIndex = () => {
+  directoryIndexHandle = null;
+  directoryIndexPromise = null;
+};
+
+const getDirectoryIndex = (directory) => {
+  if (directoryIndexHandle === directory && directoryIndexPromise) return directoryIndexPromise;
+  directoryIndexHandle = directory;
+  directoryIndexPromise = (async () => {
+    const files = new Map();
+    for await (const [name, handle] of directory.entries()) {
+      if (handle.kind === "file") files.set(name, handle);
+    }
+    return files;
+  })().catch((error) => {
+    resetDirectoryIndex();
+    throw error;
+  });
+  return directoryIndexPromise;
 };
 
 const showToast = (message) => {
@@ -170,13 +194,9 @@ const inspectBlob = async (blob) => {
 };
 
 const existingFileMatchesSource = async (directory, image, metadata = null) => {
-  let fileHandle;
-  try {
-    fileHandle = await directory.getFileHandle(image.filename, { create: false });
-  } catch (error) {
-    if (error?.name === "NotFoundError") return { exists: false, matches: false, metadata };
-    throw error;
-  }
+  const directoryIndex = await getDirectoryIndex(directory);
+  const fileHandle = directoryIndex.get(image.filename);
+  if (!fileHandle) return { exists: false, matches: false, metadata };
 
   const localFile = await fileHandle.getFile();
   const remoteMetadata = metadata || await getRemoteMetadata(image.url);
@@ -226,8 +246,8 @@ const render = () => {
       ? "下载已暂停"
       : active ? `${active} 张正在下载` : "正在自动扫描“我的图片”全部分页";
   $("#list-subtitle").textContent = selected.length === images.filter((image) => !terminalStatuses.has(image.status)).length ? "全部选中" : `${selected.length} 张已选中`;
-  $("#download-all").disabled = Boolean(directoryScanState);
-  $("#download-selected").disabled = Boolean(directoryScanState);
+  $("#download-all").disabled = false;
+  $("#download-selected").disabled = false;
 
   const list = $("#image-list");
   list.querySelectorAll(".image-row").forEach((row) => row.remove());
@@ -375,7 +395,8 @@ const reconcileDirectoryFilesNow = async (keys) => {
   if (!currentSettings.directoryMode || !handle || !directoryPermissionGranted || currentTabId == null) return [];
   const wanted = new Set(keys || []);
   const images = currentState.images.filter((image) =>
-    wanted.has(image.key) && !image.needsResolution && !["queued", "downloading"].includes(image.status));
+    wanted.has(image.key) && !image.needsResolution && !directoryCheckedKeys.has(image.key) &&
+    !["queued", "downloading"].includes(image.status));
   if (!images.length) return [];
 
   images.forEach((image) => directoryCheckingKeys.add(image.key));
@@ -414,19 +435,6 @@ const reconcileDirectoryFilesNow = async (keys) => {
         }
         if (existing.matches) return { key: image.key, status: "skipped" };
 
-        const metadata = existing.metadata || await getRemoteMetadata(image.url);
-        const reason = rejectedByMetadata(metadata);
-        if (reason) {
-          return {
-            key: image.key,
-            status: "filtered",
-            details: {
-              error: `已过滤：${reason}${metadata.size == null ? "" : ` · ${formatBytes(metadata.size)}`}`,
-              size: metadata.size,
-              contentType: metadata.contentType
-            }
-          };
-        }
         return { key: image.key, status: "ready" };
       } catch (error) {
         return { key: image.key, status: "ready", scanError: error?.message || "目录检查失败" };
@@ -458,7 +466,17 @@ const reconcileDirectoryFilesNow = async (keys) => {
 };
 
 const reconcileDirectoryFiles = (keys) => {
-  const task = () => reconcileDirectoryFilesNow(keys);
+  const uniqueKeys = [...new Set(keys || [])].filter((key) =>
+    !directoryCheckedKeys.has(key) && !directoryQueuedKeys.has(key) && !directoryCheckingKeys.has(key));
+  if (!uniqueKeys.length) return directoryScanChain.then(() => []);
+  uniqueKeys.forEach((key) => directoryQueuedKeys.add(key));
+  const task = async () => {
+    try {
+      return await reconcileDirectoryFilesNow(uniqueKeys);
+    } finally {
+      uniqueKeys.forEach((key) => directoryQueuedKeys.delete(key));
+    }
+  };
   const result = directoryScanChain.then(task, task);
   directoryScanChain = result.catch(() => []);
   return result;
@@ -475,6 +493,7 @@ const scheduleDirectoryScan = () => {
   directoryScanTimer = window.setTimeout(() => {
     const keys = currentState.images
       .filter((image) => !image.needsResolution && !directoryCheckedKeys.has(image.key) && !["queued", "downloading"].includes(image.status))
+      .filter((image) => !directoryQueuedKeys.has(image.key) && !directoryCheckingKeys.has(image.key))
       .map((image) => image.key);
     if (keys.length) void reconcileDirectoryFiles(keys);
   }, 250);
@@ -588,6 +607,8 @@ const downloadToDirectory = async (keys, handle) => {
         const writable = await fileHandle.createWritable();
         await writable.write(blob);
         await writable.close();
+        const directoryIndex = await getDirectoryIndex(currentHandle);
+        directoryIndex.set(image.filename, fileHandle);
         completed += 1;
         await markDirectStatus([key], "complete");
       } catch (error) {
@@ -737,6 +758,8 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "DIRECTORY_SELECTED") {
     currentSettings = message.settings || currentSettings;
     directoryCheckedKeys.clear();
+    directoryQueuedKeys.clear();
+    resetDirectoryIndex();
     currentState.images.forEach((image) => {
       if (["complete", "skipped"].includes(image.status)) {
         image.status = "ready";
