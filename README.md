@@ -66,12 +66,13 @@ The CLI reads only original URLs returned by `recent/image_gen`. Save that reque
 ### Bubble Tea TUI
 
 ```bash
-go build -o chatgpt-image-downloader-tui ./cmd/chatgpt-image-downloader-tui
-./chatgpt-image-downloader-tui \
+./chatgpt-image-downloader tui \
   -curl-file /path/to/request.txt \
   -output /Users/you/Downloads/chatgptimg \
   -workers 3
 ```
+
+CLI 和 TUI 使用同一个二进制；不带子命令时运行普通 CLI，带 `tui` 子命令时进入交互界面。
 
 快捷键：`↑/↓` 或 `j/k` 移动，`space` 选择，`a` 全选，`n` 全不选，`d` 下载，`p` 暂停/恢复，`q` 退出。界面显示扫描数、选择数、成功/跳过/失败数、总速度，以及每张图片的状态和进度条。
 

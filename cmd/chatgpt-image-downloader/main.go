@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/autsu/chatgpt-image-downloader/internal/downloader"
+	"github.com/autsu/chatgpt-image-downloader/internal/tui"
 )
 
 type counters struct{ scanned, downloaded, skipped, failed, bytes atomic.Int64 }
@@ -22,17 +23,28 @@ type logger struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "tui" {
+		if err := tui.Run(os.Args[2:]); err != nil {
+			fatalf("%v", err)
+		}
+		return
+	}
+	runCLI(os.Args[1:])
+}
+
+func runCLI(args []string) {
 	var curlFile, output string
 	var workers, pageSize int
 	var pageDelay time.Duration
-	flag.StringVar(&curlFile, "curl-file", "", "DevTools Copy as cURL 保存的文件")
-	flag.StringVar(&output, "output", "", "下载目录")
-	flag.IntVar(&workers, "workers", 3, "并发下载数（1-16）")
-	flag.IntVar(&pageSize, "page-size", 100, "每页图片数（1-200）")
-	flag.DurationVar(&pageDelay, "page-delay", 700*time.Millisecond, "分页请求间隔")
-	flag.Parse()
+	flags := flag.NewFlagSet("chatgpt-image-downloader", flag.ExitOnError)
+	flags.StringVar(&curlFile, "curl-file", "", "DevTools Copy as cURL 保存的文件")
+	flags.StringVar(&output, "output", "", "下载目录")
+	flags.IntVar(&workers, "workers", 3, "并发下载数（1-16）")
+	flags.IntVar(&pageSize, "page-size", 100, "每页图片数（1-200）")
+	flags.DurationVar(&pageDelay, "page-delay", 700*time.Millisecond, "分页请求间隔")
+	flags.Parse(args)
 	if output == "" {
-		flag.Usage()
+		flags.Usage()
 		os.Exit(2)
 	}
 	if workers < 1 || workers > 16 || pageSize < 1 || pageSize > 200 {

@@ -1,11 +1,10 @@
-package main
+package tui
 
 import (
 	"context"
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -69,24 +68,29 @@ var (
 	badStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
 )
 
-func main() {
+func Run(args []string) error {
 	var curlFile, output string
 	var workers, pageSize int
 	var pageDelay time.Duration
-	flag.StringVar(&curlFile, "curl-file", "", "DevTools Copy as cURL 保存的文件")
-	flag.StringVar(&output, "output", "", "下载目录")
-	flag.IntVar(&workers, "workers", 3, "并发下载数")
-	flag.IntVar(&pageSize, "page-size", 100, "每页图片数")
-	flag.DurationVar(&pageDelay, "page-delay", 700*time.Millisecond, "分页请求间隔")
-	flag.Parse()
+	flags := flag.NewFlagSet("chatgpt-image-downloader tui", flag.ContinueOnError)
+	flags.StringVar(&curlFile, "curl-file", "", "DevTools Copy as cURL 保存的文件")
+	flags.StringVar(&output, "output", "", "下载目录")
+	flags.IntVar(&workers, "workers", 3, "并发下载数")
+	flags.IntVar(&pageSize, "page-size", 100, "每页图片数")
+	flags.DurationVar(&pageDelay, "page-delay", 700*time.Millisecond, "分页请求间隔")
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
 	if output == "" {
-		flag.Usage()
-		os.Exit(2)
+		flags.Usage()
+		return fmt.Errorf("必须指定 -output")
 	}
 	cfg, err := downloader.ConfigFromCurlFile(curlFile, output)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "错误：", err)
-		os.Exit(1)
+		return err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := model{
@@ -95,9 +99,9 @@ func main() {
 		workers: workers, pageSize: pageSize, pageDelay: pageDelay, scanning: true, status: "正在扫描全部分页…",
 	}
 	if _, err := tea.NewProgram(m).Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 func (m model) Init() tea.Cmd {
