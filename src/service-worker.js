@@ -137,9 +137,21 @@ const stableHash = (input) => {
   return (hash >>> 0).toString(16).padStart(8, "0");
 };
 
+const estuaryFileId = (url) => {
+  try {
+    const parsed = new URL(url);
+    const id = decodeURIComponent(parsed.searchParams.get("id") || "");
+    return id.match(/file_[a-z0-9]+/i)?.[0]?.toLowerCase() || "";
+  } catch {
+    return "";
+  }
+};
+
 const assetIdentity = (url) => {
   try {
     const parsed = new URL(url);
+    const fileId = estuaryFileId(parsed.href);
+    if (fileId) return fileId;
     const path = decodeURIComponent(parsed.pathname);
     const uuid = path.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)?.[0];
     if (uuid) return uuid.toLowerCase();
@@ -155,6 +167,8 @@ const assetIdentity = (url) => {
 
 const filenameIdentity = (url) => {
   try {
+    const fileId = estuaryFileId(url);
+    if (fileId) return fileId;
     const decodedUrl = decodeURIComponent(String(url));
     const uuid = decodedUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
     if (uuid) return uuid.toLowerCase();
@@ -214,6 +228,7 @@ const getFilename = (url) => {
 const candidateScore = (image) => {
   let score = 0;
   const value = `${image.url} ${image.source}`.toLowerCase();
+  if (image.needsResolution) score -= 100;
   if (image.source === "request") score += 40;
   if (image.source === "dom") score += 20;
   if (/original|full|download|large/.test(value)) score += 20;
@@ -236,6 +251,7 @@ const mergeImages = (state, items) => {
       name: sanitizeSegment(candidate.name),
       prompt: String(candidate.prompt || "").slice(0, 300),
       source: candidate.source || "page",
+      needsResolution: Boolean(candidate.needsResolution),
       firstSeenAt: existing?.firstSeenAt || Date.now(),
       lastSeenAt: Date.now(),
       selected: existing?.selected ?? true,
@@ -248,7 +264,9 @@ const mergeImages = (state, items) => {
       changed = true;
       return;
     }
-    const preferredUrl = candidateScore(incoming) >= candidateScore(existing) ? incoming.url : existing.url;
+    const useIncoming = candidateScore(incoming) >= candidateScore(existing);
+    const preferred = useIncoming ? incoming : existing;
+    const preferredUrl = preferred.url;
     const nextFilename = getFilename(preferredUrl);
     if (existing.url !== preferredUrl || existing.lastSeenAt !== incoming.lastSeenAt || existing.filename !== nextFilename) {
       const sourceChanged = existing.url !== preferredUrl;
@@ -258,6 +276,7 @@ const mergeImages = (state, items) => {
       existing.name = incoming.name || existing.name;
       existing.prompt = incoming.prompt || existing.prompt;
       existing.source = incoming.source || existing.source;
+      existing.needsResolution = Boolean(preferred.needsResolution);
       if (sourceChanged && existing.status === "filtered") {
         existing.status = "ready";
         existing.selected = true;
@@ -600,6 +619,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (status === "complete") {
         await chrome.storage.local.set({ [DOWNLOADED_KEY]: [...downloadedKeys].slice(-5000) });
       }
+      await broadcast(currentTabId, state);
+      return { state };
+    }
+    if (message.type === "UPDATE_IMAGE_SOURCE" && (message.tabId ?? tabId) != null) {
+      const currentTabId = message.tabId ?? tabId;
+      const state = await getStoredState(currentTabId);
+      const image = state.images.find((item) => item.key === message.key);
+      if (!image || !/^https?:\/\//i.test(message.url || "")) return { state, error: "图片不存在" };
+      image.url = message.url;
+      image.filename = getFilename(message.url);
+      image.needsResolution = false;
+      image.status = "ready";
+      image.error = "";
+      await saveState(currentTabId, state);
       await broadcast(currentTabId, state);
       return { state };
     }

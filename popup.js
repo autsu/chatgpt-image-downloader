@@ -9,6 +9,7 @@ const resumeWaiters = [];
 const liveProgress = new Map();
 const chromeProgressSamples = new Map();
 const directoryCheckingKeys = new Set();
+const resolvingKeys = new Set();
 const directoryCheckedKeys = new Set();
 const MIN_IMAGE_BYTES = 64 * 1024;
 const MIN_IMAGE_EDGE = 512;
@@ -23,6 +24,14 @@ const $ = (selector) => document.querySelector(selector);
 
 const send = (message) => new Promise((resolve) => {
   chrome.runtime.sendMessage(message, (response) => {
+    void chrome.runtime.lastError;
+    resolve(response || {});
+  });
+});
+
+const sendToTab = (message) => new Promise((resolve) => {
+  if (currentTabId == null) return resolve({});
+  chrome.tabs.sendMessage(currentTabId, message, (response) => {
     void chrome.runtime.lastError;
     resolve(response || {});
   });
@@ -182,6 +191,7 @@ const existingFileMatchesSource = async (directory, image, metadata = null) => {
 };
 
 const statusText = (image) => {
+  if (resolvingKeys.has(image.key)) return "正在解析原图…";
   if (directoryCheckingKeys.has(image.key)) return "检查目标文件夹…";
   if (image.status === "skipped") return "已存在，跳过";
   if (image.status === "filtered") return image.error || "已过滤小图";
@@ -365,7 +375,7 @@ const reconcileDirectoryFilesNow = async (keys) => {
   if (!currentSettings.directoryMode || !handle || !directoryPermissionGranted || currentTabId == null) return [];
   const wanted = new Set(keys || []);
   const images = currentState.images.filter((image) =>
-    wanted.has(image.key) && !["queued", "downloading"].includes(image.status));
+    wanted.has(image.key) && !image.needsResolution && !["queued", "downloading"].includes(image.status));
   if (!images.length) return [];
 
   images.forEach((image) => directoryCheckingKeys.add(image.key));
@@ -464,7 +474,7 @@ const scheduleDirectoryScan = () => {
   window.clearTimeout(directoryScanTimer);
   directoryScanTimer = window.setTimeout(() => {
     const keys = currentState.images
-      .filter((image) => !directoryCheckedKeys.has(image.key) && !["queued", "downloading"].includes(image.status))
+      .filter((image) => !image.needsResolution && !directoryCheckedKeys.has(image.key) && !["queued", "downloading"].includes(image.status))
       .map((image) => image.key);
     if (keys.length) void reconcileDirectoryFiles(keys);
   }, 250);
@@ -613,6 +623,36 @@ const updateSelections = async (key, checked) => {
 const download = async (keys, message) => {
   if (!keys.length) {
     showToast(message);
+    return;
+  }
+  const resolvedKeys = [];
+  for (const key of keys) {
+    let image = currentState.images.find((item) => item.key === key);
+    if (!image) continue;
+    if (image.needsResolution) {
+      resolvingKeys.add(key);
+      render();
+      const resolved = await sendToTab({ type: "RESOLVE_ORIGINAL_IMAGE", url: image.url });
+      resolvingKeys.delete(key);
+      if (!resolved.ok || !resolved.url) {
+        await markDirectStatus([key], "error", resolved.error || "无法解析原图，请滚动到该图片后重试");
+        continue;
+      }
+      const updated = await send({
+        type: "UPDATE_IMAGE_SOURCE",
+        tabId: currentTabId,
+        key,
+        url: resolved.url
+      });
+      if (updated.state) currentState = updated.state;
+      image = currentState.images.find((item) => item.key === key);
+    }
+    if (image && !image.needsResolution) resolvedKeys.push(key);
+  }
+  render();
+  keys = resolvedKeys;
+  if (!keys.length) {
+    showToast("没有成功解析出可下载的原图");
     return;
   }
   if (currentSettings.directoryMode && directoryHandle) {

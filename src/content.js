@@ -57,9 +57,21 @@
     }
   };
 
+  const estuaryFileId = (value) => {
+    try {
+      const url = new URL(value, window.location.href);
+      const id = decodeURIComponent(url.searchParams.get("id") || "");
+      return id.match(/file_[a-z0-9]+/i)?.[0]?.toLowerCase() || "";
+    } catch {
+      return "";
+    }
+  };
+
   const assetId = (value) => {
     try {
       const url = new URL(value, window.location.href);
+      const fileId = estuaryFileId(url.href);
+      if (fileId) return fileId;
       const path = decodeURIComponent(url.pathname);
       const uuid = path.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)?.[0];
       if (uuid) return uuid.toLowerCase();
@@ -130,6 +142,7 @@
       name: candidate.name || existing?.name || "",
       prompt: candidate.prompt || existing?.prompt || "",
       createdAt: candidate.createdAt || existing?.createdAt || "",
+      needsResolution: Boolean(candidate.needsResolution ?? existing?.needsResolution),
       source: source || existing?.source || "page"
     });
     if (flushTimer === null) flushTimer = window.setTimeout(flush, 120);
@@ -144,7 +157,11 @@
       return;
     }
     if (!isHttpUrl(url)) return;
-    if (isThumbnailUrl(url)) return;
+    if (isThumbnailUrl(url) && !candidate.needsResolution) return;
+    if (candidate.needsResolution) {
+      addPending({ ...candidate, url }, url, source);
+      return;
+    }
     if (!["dom", "restore"].includes(source) && !isInMyImagesScope(url)) {
       deferredCandidates.set(url, { ...candidate, url });
       return;
@@ -162,7 +179,31 @@
     });
   };
 
+  const findOpenButtonForImage = (image) => {
+    const directButton = image?.closest("button");
+    if (directButton && /open image|打开图片/i.test(directButton.getAttribute("aria-label") || "")) return directButton;
+    let node = image?.parentElement;
+    for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+      const button = node.querySelector('button[aria-label^="Open image:"], button[aria-label*="打开图片"]');
+      if (button) return button;
+    }
+    return null;
+  };
+
   const scanDom = () => {
+    document.querySelectorAll('img[src*="/backend-api/estuary/content"]').forEach((image) => {
+      const url = image.currentSrc || image.src;
+      if (!isHttpUrl(url) || !isThumbnailUrl(url) || !estuaryFileId(url)) return;
+      const openButton = findOpenButtonForImage(image);
+      if (!openButton) return;
+      const label = openButton?.getAttribute("aria-label") || image.alt || "";
+      enqueue({
+        url,
+        name: label.replace(/^Open image:\s*/i, "").trim(),
+        needsResolution: true
+      }, "dom");
+    });
+
     refreshScope();
     if (!myImagesScope) return;
 
@@ -203,6 +244,64 @@
       deferredCandidates.delete(url);
       addPending(candidate, url, "request");
     });
+  };
+
+  const isVisible = (element) => {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" &&
+      style.visibility !== "hidden" && Number(style.opacity) !== 0;
+  };
+
+  const findCardOpenButton = (fileId) => {
+    const image = [...document.querySelectorAll('img[src*="/backend-api/estuary/content"]')]
+      .find((item) => isThumbnailUrl(item.currentSrc || item.src) && estuaryFileId(item.currentSrc || item.src) === fileId);
+    if (!image) return null;
+    return findOpenButtonForImage(image);
+  };
+
+  const waitForOriginalImage = (fileId, timeoutMs = 7000) => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const image = [...document.querySelectorAll('img[src*="/backend-api/estuary/content"]')].find((item) => {
+        const src = item.currentSrc || item.src;
+        return src && !isThumbnailUrl(src) && estuaryFileId(src) === fileId && isVisible(item);
+      });
+      if (image) {
+        window.clearInterval(timer);
+        resolve(image.currentSrc || image.src);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        window.clearInterval(timer);
+        reject(new Error("等待原图地址超时"));
+      }
+    }, 120);
+  });
+
+  const closeImageViewer = async () => {
+    const closeButton = [...document.querySelectorAll('button, [role="button"]')].find((element) => {
+      if (!isVisible(element)) return false;
+      const label = `${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""}`;
+      return /close fullscreen|close image|关闭|返回/i.test(label);
+    });
+    if (closeButton) closeButton.click();
+    else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  };
+
+  const resolveOriginalImage = async (thumbnailUrl) => {
+    const fileId = estuaryFileId(thumbnailUrl);
+    if (!fileId) throw new Error("无法识别图片文件 ID");
+    const openButton = findCardOpenButton(fileId);
+    if (!openButton) throw new Error("找不到对应的图片卡片，请滚动到该图片后重试");
+    openButton.click();
+    try {
+      return await waitForOriginalImage(fileId);
+    } finally {
+      await closeImageViewer();
+    }
   };
 
   const observeResources = () => {
@@ -330,6 +429,14 @@
     if (event.source !== window || event.origin !== window.location.origin) return;
     if (event.data?.type !== PAGE_MESSAGE) return;
     enqueue(event.data.candidate, "request");
+  });
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type !== "RESOLVE_ORIGINAL_IMAGE") return false;
+    resolveOriginalImage(message.url)
+      .then((url) => sendResponse({ ok: true, url }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message || "解析原图失败" }));
+    return true;
   });
 
   const mutationObserver = new MutationObserver(() => scanDom());

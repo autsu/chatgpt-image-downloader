@@ -13,6 +13,7 @@
 - 显示单张图片的下载进度、已下载大小和实时速度。
 - 目录由设置页通过系统文件夹选择器授权，完成后自动返回 Images 页面。
 - 页面刷新、重新打开面板、切换目录或扫描到新图片时自动核对目标目录。
+- 兼容 ChatGPT Estuary 图片列表：缩略图仅用于建立列表，下载前自动解析原图。
 
 Scans only the **My images** section on `chatgpt.com/images`, filters thumbnails by their real content type, dimensions, and size, and checks the target folder before queueing. Downloads use stable filenames and show per-file progress and speed. Pause/resume and folder switching are supported.
 
