@@ -42,6 +42,23 @@ Click the floating button, choose a folder from the settings page, then download
 >
 > Chrome does not expose the full macOS absolute path to extensions. The extension stores the directory handle and writes directly to the authorized folder.
 
+## Go CLI
+
+CLI 只解析 `recent/image_gen` 返回的原图 URL，不扫描网页 DOM，因此不会收集 `education-poster` 等页面素材或缩略图。
+
+```bash
+go build -o chatgpt-image-downloader ./cmd/chatgpt-image-downloader
+chmod 600 /path/to/request.txt
+./chatgpt-image-downloader \
+  -curl-file /path/to/request.txt \
+  -output /Users/you/Downloads/chatgptimg \
+  -workers 3
+```
+
+在 Chrome DevTools Network 中找到 `recent/image_gen` 请求，选择 **Copy as cURL**，粘贴到 `request.txt`。该文件含登录凭据，不要提交、分享或长期保存；下载完成后删除。
+
+The CLI reads only original URLs returned by `recent/image_gen`. Save that request with **Copy as cURL**, pass the local file with `-curl-file`, and delete it after use because it contains session credentials.
+
 ## 隐私 · Privacy
 
 扩展只在 `chatgpt.com/images` 页面运行，不上传图片或账号数据。下载请求直接发送到图片原始地址。
