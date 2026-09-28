@@ -3,6 +3,7 @@ package downloader
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +38,19 @@ func TestConfigAndOriginalFiltering(t *testing.T) {
 	}
 	if got := StableBase("", original); got != "ChatGPT-file_abc123" {
 		t.Fatalf("unexpected stable name: %s", got)
+	}
+}
+
+func TestMissingCurlFileIncludesInstructions(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-request.txt")
+	_, err := ConfigFromCurlFile(missing, t.TempDir())
+	if err == nil {
+		t.Fatal("expected missing-file error")
+	}
+	message := err.Error()
+	for _, expected := range []string{missing, "DevTools", "recent/image_gen", "Copy as cURL", "-curl-file"} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("error does not contain %q: %s", expected, message)
+		}
 	}
 }

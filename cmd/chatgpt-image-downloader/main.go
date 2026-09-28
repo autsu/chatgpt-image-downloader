@@ -31,7 +31,7 @@ func main() {
 	flag.IntVar(&pageSize, "page-size", 100, "每页图片数（1-200）")
 	flag.DurationVar(&pageDelay, "page-delay", 700*time.Millisecond, "分页请求间隔")
 	flag.Parse()
-	if curlFile == "" || output == "" {
+	if output == "" {
 		flag.Usage()
 		os.Exit(2)
 	}

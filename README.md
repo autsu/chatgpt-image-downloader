@@ -57,6 +57,8 @@ chmod 600 /path/to/request.txt
 
 在 Chrome DevTools Network 中找到 `recent/image_gen` 请求，选择 **Copy as cURL**，粘贴到 `request.txt`。该文件含登录凭据，不要提交、分享或长期保存；下载完成后删除。
 
+程序启动时会先检查 `-curl-file` 指定的文件。文件不存在、不可读、指向目录或不是完整的 `recent/image_gen` cURL 时会停止，并在错误信息中显示上述获取步骤。
+
 The CLI reads only original URLs returned by `recent/image_gen`. Save that request with **Copy as cURL**, pass the local file with `-curl-file`, and delete it after use because it contains session credentials.
 
 普通 CLI 会逐文件输出开始、进度、实时速度、已存在跳过、完成和失败日志。

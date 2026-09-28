@@ -38,26 +38,26 @@ type resultMsg struct {
 type downloadsDoneMsg struct{}
 
 type model struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	cfg         downloader.Config
-	client      *http.Client
-	events      chan tea.Msg
-	control     *downloader.Controller
-	rows        []row
-	byName      map[string]int
-	cursor      int
-	offset      int
-	width       int
-	height      int
-	workers     int
-	pageSize    int
-	pageDelay   time.Duration
-	scanning    bool
-	downloading bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	cfg           downloader.Config
+	client        *http.Client
+	events        chan tea.Msg
+	control       *downloader.Controller
+	rows          []row
+	byName        map[string]int
+	cursor        int
+	offset        int
+	width         int
+	height        int
+	workers       int
+	pageSize      int
+	pageDelay     time.Duration
+	scanning      bool
+	downloading   bool
 	downloadTotal int
-	paused      bool
-	status      string
+	paused        bool
+	status        string
 }
 
 var (
@@ -79,7 +79,7 @@ func main() {
 	flag.IntVar(&pageSize, "page-size", 100, "每页图片数")
 	flag.DurationVar(&pageDelay, "page-delay", 700*time.Millisecond, "分页请求间隔")
 	flag.Parse()
-	if curlFile == "" || output == "" {
+	if output == "" {
 		flag.Usage()
 		os.Exit(2)
 	}

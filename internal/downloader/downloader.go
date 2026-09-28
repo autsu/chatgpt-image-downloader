@@ -106,15 +106,28 @@ var (
 )
 
 func ConfigFromCurlFile(path, output string) (Config, error) {
+	if strings.TrimSpace(path) == "" {
+		return Config{}, errors.New(curlFileHelp("未指定请求文件", path))
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Config{}, errors.New(curlFileHelp("请求文件不存在", path))
+		}
+		return Config{}, fmt.Errorf("无法访问请求文件 %q：%w\n%s", path, err, curlInstructions())
+	}
+	if info.IsDir() {
+		return Config{}, errors.New(curlFileHelp("请求文件路径指向目录，不是文件", path))
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return Config{}, err
+		return Config{}, fmt.Errorf("无法读取请求文件 %q：%w\n%s", path, err, curlInstructions())
 	}
 	text := strings.ReplaceAll(string(raw), "\\\n", " ")
 	endpoint := optionValue(text, "--url")
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Host != "chatgpt.com" || u.Path != "/backend-api/my/recent/image_gen" {
-		return Config{}, errors.New("cURL 不是 chatgpt.com 的 recent/image_gen 请求")
+		return Config{}, fmt.Errorf("请求文件 %q 不是 chatgpt.com 的 recent/image_gen cURL\n%s", path, curlInstructions())
 	}
 	headers := make(http.Header)
 	pattern := regexp.MustCompile(`(?s)-H\s+('[^']*'|"[^"]*")`)
@@ -133,7 +146,7 @@ func ConfigFromCurlFile(path, output string) (Config, error) {
 		headers.Set("Cookie", cookie)
 	}
 	if headers.Get("Authorization") == "" || headers.Get("Chatgpt-Account-Id") == "" {
-		return Config{}, errors.New("缺少 Authorization 或 chatgpt-account-id")
+		return Config{}, fmt.Errorf("请求文件 %q 缺少 Authorization 或 chatgpt-account-id，请复制完整请求\n%s", path, curlInstructions())
 	}
 	query := u.Query()
 	query.Del("after")
@@ -142,6 +155,17 @@ func ConfigFromCurlFile(path, output string) (Config, error) {
 		return Config{}, err
 	}
 	return Config{URL: u.String(), Headers: headers, Output: output}, nil
+}
+
+func curlFileHelp(reason, path string) string {
+	if path == "" {
+		return reason + "。\n" + curlInstructions()
+	}
+	return fmt.Sprintf("%s：%s\n%s", reason, path, curlInstructions())
+}
+
+func curlInstructions() string {
+	return "获取方式：打开 https://chatgpt.com/images/ → 按 F12 打开 DevTools → Network → 刷新页面 → 搜索 recent/image_gen → 右键该请求 → Copy → Copy as cURL → 将内容保存为本地 request.txt，然后通过 -curl-file /完整路径/request.txt 指定。"
 }
 
 func Scan(ctx context.Context, client *http.Client, cfg Config, pageSize int, delay time.Duration, onItem func(Item)) error {
