@@ -488,15 +488,8 @@ const refreshExistingStatuses = async () => {
 };
 
 const scheduleDirectoryScan = () => {
-  if (!currentSettings.directoryMode || !directoryHandle || !directoryPermissionGranted) return;
-  window.clearTimeout(directoryScanTimer);
-  directoryScanTimer = window.setTimeout(() => {
-    const keys = currentState.images
-      .filter((image) => !image.needsResolution && !directoryCheckedKeys.has(image.key) && !["queued", "downloading"].includes(image.status))
-      .filter((image) => !directoryQueuedKeys.has(image.key) && !directoryCheckingKeys.has(image.key))
-      .map((image) => image.key);
-    if (keys.length) void reconcileDirectoryFiles(keys);
-  }, 250);
+  // Directory reconciliation is intentionally user-triggered. Running it for
+  // every state update causes duplicate work while API pages are still arriving.
 };
 
 const fetchImageBlob = async (image) => {
@@ -553,6 +546,7 @@ const downloadToDirectory = async (keys, handle) => {
     return;
   }
   directoryPermissionGranted = true;
+  uniqueKeys.forEach((key) => directoryCheckedKeys.delete(key));
   showToast(`正在检查目标文件夹中的 ${uniqueKeys.length} 张图片…`);
   await reconcileDirectoryFiles(uniqueKeys);
   const downloadKeys = uniqueKeys.filter((key) => {
@@ -770,7 +764,7 @@ chrome.runtime.onMessage.addListener((message) => {
       directoryHandle = handle;
       void hasDirectoryPermission(handle).then((granted) => {
         directoryPermissionGranted = granted;
-        return refreshExistingStatuses();
+        return [];
       }).then(() => {
         render();
         showToast(directoryPermissionGranted
@@ -805,6 +799,5 @@ window.setInterval(() => void pollChromeDownloadProgress(), 500);
   if (!directoryHandle) currentSettings.directoryMode = false;
   directoryPermissionGranted = await hasDirectoryPermission(directoryHandle);
   directoryCheckedKeys.clear();
-  await refreshExistingStatuses();
   render();
 })();

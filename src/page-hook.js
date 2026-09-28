@@ -8,6 +8,7 @@
   const blobSources = new WeakMap();
   const pendingBlobSources = [];
   let autoPaginationRunning = false;
+  let autoPaginationStarted = false;
 
   const rememberPendingBlobSource = (url) => {
     pendingBlobSources.push(url);
@@ -144,7 +145,8 @@
   };
 
   const autoPaginate = async (requestUrl, args, firstCursor) => {
-    if (autoPaginationRunning || !firstCursor) return;
+    if (autoPaginationStarted || autoPaginationRunning || !firstCursor) return;
+    autoPaginationStarted = true;
     autoPaginationRunning = true;
     let cursor = firstCursor;
     const seen = new Set();
